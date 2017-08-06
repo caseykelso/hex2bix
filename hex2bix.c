@@ -1,10 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
+#include <stdint.h>
+#include <stdbool.h>
 #include <time.h>
 #include <ctype.h>
-
+#include <assert.h>
 #pragma pack (1)
 
 #define ERR_INVALID_CL      "Invalid command line."
@@ -19,7 +20,7 @@
 
 #define EXT_LENGTH      4
 #define EXT_STRING      ".bix"
-#define MEMORY_SIZE             0x2000
+#define MEMORY_SIZE             0x8000
 #define MEMORY_BUFFER_SIZE      0x10000
 #define MEM_FILL        0xaa
 #define LINE_LENGTH     500
@@ -37,18 +38,13 @@
                         num.byte[1] ^= num.byte[0];\
                         num.byte[0] ^= num.byte[1]
 
+
+typedef uint8_t  BYTE;
+typedef uint16_t WORD;
+typedef uint32_t DWORD;
+
 #define MSB(num)        (BYTE)(((WORD)num & 0xff00) >> 8)
 #define LSB(num)        (BYTE)((WORD)num & 0x00ff)
-
-typedef unsigned char  BYTE;
-typedef unsigned short WORD;
-typedef unsigned long  DWORD;
-
-typedef enum
-{
-    FALSE = 0,
-    TRUE
-}BOOL;
 
 typedef union
 {
@@ -90,12 +86,12 @@ char    *SymbolName;
 IIC_HDR IIC_Hdr = { 0xB2, 0x0547, 0x2131, 0x0000, 0x04, 0x00 };
 // IIC_HDR  IIC_Hdr = { 0xBA, 0x547, 0x2504, 0x0000, 0x1002, 0x0000, 0x061F }; //TPM
 #define DOWNLOAD_PROM_TYPE (IIC_Hdr.prom_type & 2)
-char    Extension[3][5] = { ".bix\0", ".iic\0", ".a51\0" };
+char    Extension[3][5] = { ".bix", ".iic", ".a51" };
 BYTE    ResetString[] = { 0x80, 0x01, 0x7f, 0x92, 0x00 };
 BYTE    Fx2ResetString[] = { 0x80, 0x01, 0xE6, 0x00, 0x00 };
-BOOL    IIC_Reset = FALSE;
-BOOL    compressIIC = FALSE;
-BOOL    EELoader = FALSE;
+bool    IIC_Reset = false;
+bool    compressIIC = false;
+bool    EELoader = false;
 //BOOL  IIC_Reset = TRUE; //TPM: Must generate Reset String.
 
 FILETYPE    OutFileType = FT_BIX;
@@ -193,7 +189,7 @@ void Error(char *err)
 
 void ParseCommandLine(int argc, char *argv[])
 {
-    BOOL    cont;
+    bool    cont;
     int     i,j,root_length;
 
     InFilename = NULL;
@@ -201,7 +197,7 @@ void ParseCommandLine(int argc, char *argv[])
     {
         if((argv[i][0] == '-') || (argv[i][0] == '/'))
         {
-            cont = TRUE;
+            cont = true;
             for(j=1;argv[i][j] && cont;++j)     // Cont flag permits multiple commands in a single argv (like -AR)
                 switch(toupper(argv[i][j]))
                 {
@@ -209,14 +205,14 @@ void ParseCommandLine(int argc, char *argv[])
                         OutFileType = FT_ASM;
                         break;
                     case 'E':
-                        EELoader = TRUE;
+                        EELoader = true;
                         OutFileType = FT_IIC;
-                        IIC_Reset = TRUE;
+                        IIC_Reset = true;
                         compressIIC = 1;
                         break;
                     case 'I':
                         OutFileType = FT_IIC;
-                        IIC_Reset = TRUE;
+                        IIC_Reset = true;
                         if (toupper(argv[i][j+1]) == 'C')     // "IC"
                         {
                             compressIIC = 1;
@@ -233,33 +229,33 @@ void ParseCommandLine(int argc, char *argv[])
                             OutFileType = FT_BIX;
                         break;
                     case 'R':
-                        IIC_Reset = TRUE;
+                        IIC_Reset = true;
                         break;
                     case 'M':
                         MemSize = (WORD)strtol(argv[++i],NULL,0);
-                        cont = FALSE;
+                        cont = false;
                         break;
                     case 'C':
                         IIC_Hdr.Config0 = (BYTE)strtol(argv[++i],NULL,0);
-                        cont = FALSE;
+                        cont = false;
                         break;
                     case 'F':
                         IIC_Hdr.prom_type = (BYTE)strtol(argv[++i],NULL,0);
-                        cont = FALSE;
+                        cont = false;
                         break;
                     case 'V':
                         IIC_Hdr.VendorID.w = (WORD)strtol(argv[++i],NULL,0);
-                        cont = FALSE;
+                        cont = false;
                         break;
                     case 'P':
                         IIC_Hdr.FnProductID.w = (WORD)strtol(argv[++i],NULL,0);
-                        cont = FALSE;
+                        cont = false;
                         break;
                     case 'O':
                         i++;
                         OutFilename = (char *)malloc(strlen(argv[i]+EXT_LENGTH+1));
                         strcpy(OutFilename, argv[i]);
-                        cont = FALSE;
+                        cont = false;
                         break;
                     case '?':
                     case 'H':
@@ -267,10 +263,10 @@ void ParseCommandLine(int argc, char *argv[])
                         break;
                     case 'S':
                         SymbolName = argv[++i];
-                        cont = FALSE;
+                        cont = false;
                         break;
                     default:
-                        Error(ERR_INVALID_SWTCH);
+                        assert(0); //Error(ERR_INVALID_SWTCH);
                 }
         }
         else
@@ -280,7 +276,10 @@ void ParseCommandLine(int argc, char *argv[])
     if(!InFilename && DOWNLOAD_PROM_TYPE)
         DisplayHelp();
     else if (InFilename && !DOWNLOAD_PROM_TYPE)
-        Error(ERR_FTYPE_MISMATCH);
+    {
+//        Error(ERR_FTYPE_MISMATCH);
+          assert(0);
+    } 
 
     if (OutFilename == NULL)
     {
@@ -296,13 +295,13 @@ void ParseCommandLine(int argc, char *argv[])
     }
 }
 
-BOOL GetNextBlock(DWORD *addr)
+bool GetNextBlock(DWORD *addr)
 {
     while(!ImageMap[*addr] && (*addr < MemSize))
         ++*addr;
     if(*addr == MemSize)
-        return(FALSE);
-    return(TRUE);
+        return(false);
+    return(true);
 }
 
 // Gets the max block size we want to write to the .iic file.
@@ -340,7 +339,7 @@ int main(int argc, char *argv[])
     Image = (BYTE *)malloc(MEMORY_BUFFER_SIZE);
     ImageMap = (BYTE *)malloc(MEMORY_BUFFER_SIZE+2);        // add two extra bytes to the image to help with iic compression.
     memset(Image,MEM_FILL,MEMORY_BUFFER_SIZE);
-    memset(ImageMap,FALSE,MEMORY_BUFFER_SIZE);
+    memset(ImageMap,0,MEMORY_BUFFER_SIZE);
 
     if (InFilename)
         if (InFileType == FT_HEX)
@@ -348,12 +347,18 @@ int main(int argc, char *argv[])
             file = fopen(InFilename,"r");
 
             if(!file)
-                Error(ERR_INFILE);
+            {
+            //    Error(ERR_INFILE);
+                  assert(0);
+            }
 
             while(fgets(line,LINE_LENGTH,file))
             {
                 if(line[0] != ':')
-                    Error(ERR_INVALID_FILE);
+                {
+                   // Error(ERR_INVALID_FILE);
+                    assert(0);
+                } 
                 memcpy(tmp,&line[1],2);
                 tmp[2] = 0;
                 rec_length = (BYTE)strtol(tmp,NULL,16);
@@ -380,7 +385,7 @@ int main(int argc, char *argv[])
                     memcpy(tmp,&line[(i*2)+9],2);
                     tmp[2] = 0;
                     chksum += (Image[rec_addr+i] = (BYTE)strtol(tmp,NULL,16));
-                    ImageMap[rec_addr+i] = TRUE;
+                    ImageMap[rec_addr+i] = true;
                 }
 
                 chksum = (~chksum) + 1;
@@ -388,7 +393,10 @@ int main(int argc, char *argv[])
                 tmp[2] = 0;
                 rec_chksum = (BYTE)strtol(tmp,NULL,16);
                 if(rec_chksum != chksum)
-                    Error(ERR_BAD_CHKSUM);
+                {
+                    //Error(ERR_BAD_CHKSUM);
+                    assert(0);
+                }
 
             }
 
@@ -401,10 +409,13 @@ int main(int argc, char *argv[])
             file = fopen(InFilename,"r");
 
             if(!file)
-                Error(ERR_INFILE);
+            {
+                //Error(ERR_INFILE);
+                assert(0);
+            }
                
             numread = fread( Image, sizeof( char ), MemSize, file );
-            memset(ImageMap,TRUE,numread);
+            memset(ImageMap,true,numread);
         }
 
     file = fopen(OutFilename,"wb");
@@ -413,7 +424,10 @@ int main(int argc, char *argv[])
     {
         case FT_BIX:
             if(!file)
-                Error(ERR_OUTFILE);
+            {
+                //Error(ERR_OUTFILE);
+                assert(0);
+            }
             
             fwrite(Image,sizeof(BYTE),MemSize,file);
             bytes = MemSize;
@@ -438,7 +452,10 @@ int main(int argc, char *argv[])
                     bytes = 8;
                     break;
                 default:
-                    Error(ERR_UNRECOGNIZED_FIRSTBYTE);
+                    {
+                        //Error(ERR_UNRECOGNIZED_FIRSTBYTE);
+                        assert(0);
+                    }
             }
         }
 
@@ -478,7 +495,8 @@ int main(int argc, char *argv[])
             if (bytes && !DOWNLOAD_PROM_TYPE)
             {
                 printf("%x\n", addr);
-                Error(ERR_FTYPE_MISMATCH);
+                assert(0);
+                //Error(ERR_FTYPE_MISMATCH);
             }
 
             if(bytes && IIC_Reset)

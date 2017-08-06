@@ -5,6 +5,7 @@ LIBS =
 
 C_SOURCES       = $(wildcard *.c)
 C_OBJS = $(patsubst %.c, %.o, $(C_SOURCES))
+CC = gcc
 
 # ------------  generate the names of the object files  ------------------------
 OBJECTS         = $(addsuffix .o,$(BASENAMES))
@@ -14,7 +15,7 @@ PREREQUISITES   = $(addprefix .,$(addsuffix .d,$(BASENAMES)))
 
 # ------------  make the executable (the default goal)  ------------------------
 %.o:%.c
-	$(CC) -c $<$ $(CCFLAGS)
+	$(CXX) -ggdb -g3 -O0 -c $<$ $(CCFLAGS)
 
 $(TARGET): $(CPP_OBJS) $(C_OBJS)
 	$(CXX)$(LINKFLAGS) -o $(TARGET) $^ $(LIBS)

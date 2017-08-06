@@ -1,2 +1,4 @@
 *.o
 hex2bix
+*.swp
+
