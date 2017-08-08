@@ -7,6 +7,7 @@
 #include <ctype.h>
 #include <assert.h>
 #include <docopt/docopt.h>
+#include <iostream>
  
 #pragma pack (1)
 
@@ -83,7 +84,8 @@ typedef struct
 DWORD   MemSize = MEMORY_SIZE;
 BYTE    *Image;
 BYTE    *ImageMap;
-char    *InFilename,*OutFilename = NULL;
+std::string  InFilename;
+std::string  OutFilename;
 char    *SymbolName;
 IIC_HDR IIC_Hdr = { 0xB2, 0x0547, 0x2131, 0x0000, 0x04, 0x00 };
 // IIC_HDR  IIC_Hdr = { 0xBA, 0x547, 0x2504, 0x0000, 0x1002, 0x0000, 0x061F }; //TPM
@@ -162,10 +164,10 @@ void Error(char *err)
     exit(2);
 }
 
-bool get_file(std::map<std::string, docopt::value> args, std::string &file)
+bool get_inputfile(std::map<std::string, docopt::value> args, std::string &file)
 {
   bool result = false; 
-  auto p = args.find("--file")->second;
+  auto p = args.find("--source")->second;
 
   if (p.isString())
   {
@@ -175,6 +177,22 @@ bool get_file(std::map<std::string, docopt::value> args, std::string &file)
   
   return result;
 }
+
+bool get_outputfile(std::map<std::string, docopt::value> args, std::string &file)
+{
+  bool result = false; 
+  auto p = args.find("--output")->second;
+
+  if (p.isString())
+  {
+     file = p.asString();
+     result = true;
+  }
+  
+  return result;
+}
+
+
 
 bool get_memory(std::map<std::string, docopt::value> args, std::string &memory)
 {
@@ -355,16 +373,33 @@ void DisplayHelp(void)
 }
 #endif
 
+
+bool get_sourcefile(std::map<std::string, docopt::value> args, std::string &file)
+{
+  bool result = false; 
+  auto p = args.find("--source")->second;
+
+  if (p.isString())
+  {
+     file = p.asString();
+     result = true;
+  }
+  
+  return result;
+}
+
 int main(int argc, char *argv[])
 {
-    BYTE        rec_length, rec_type, rec_chksum, chksum;
+    BYTE        rec_length, rec_type;
+    unsigned char  rec_chksum, chksum;
     DWORD       rec_addr,addr,len, bytes = 0;
     BLOCK_HDR   block_hdr;
     char        line[LINE_LENGTH + 1],tmp[5],time_str[TIME_STR_LEN],date_str[DATE_STR_LEN];
     DWORD       i,j;
     FILE        *file;
-    time_t      *time_now;
+    time_t      time_now;
     DWORD totalCodeBytes = 0;
+    bool  failed_init = false;
 
 	static const char USAGE[] =
 	R"(hex2bix.
@@ -372,16 +407,14 @@ int main(int argc, char *argv[])
            Copyright (c) 2012-2013, Cypress Semiconductor Inc.
 
 	    Usage:
-	      hex2bix --port=<port> --a51  --source=<hexfilename> [--baud=<baudrate>]
-	      hex2bix --port=<port> --bix --source=<hexfilename> [--baud=<baudrate>]
+	      hex2bix  --source=<hexfilename> --output=<outputfilename> [--maxmemory=<maxmemory>] [--configbyte=<configbyte>] [--firstbyte=<firstbyte>] [--bix] [--a51] [--appendreset] [--iic] [--iicc]
+	      hex2bix  --source=<hexfilename> --output=<outputfilename> [--maxmemory=<maxmemory>] [--configbyte=<configbyte>] [--firstbyte=<firstbyte>] [--bix] [--a51] [--appendreset] [--iic] [--iicc]
               hex2bix --a51
 	      hex2bix (-h | --help)
 	      hex2bix --version
 	    Options:
 	      -h --help                    Show this screen.
 	      --version                    Show version.
-	      --port=<comport>             Path to comport.
-	      --baud=<baudrate>            Baudrate [default: 115200].
 	      --iic                        Output file in IIC file for External RAM.
               --iicc                       Output file in compressed IC file format. Sets --appendreset.
 	      --a51                        Output file in A51 file format.
@@ -394,20 +427,91 @@ int main(int argc, char *argv[])
               --firstbyte=<firstbyte>      Set first byte (0xB0, 0xB2, 0xB6, 0xC0, 0xC2). Default is 0xB2.
 	)";
 
-#if 0
-    DisplayHeader();
-    ParseCommandLine(argc,argv);
-#endif
+   std::map<std::string, docopt::value> args
+        = docopt::docopt(USAGE,
+                         { argv + 1, argv + argc },
+                         true,                // show help if requested
+                         "hex2bix 2.0");  // version string
+
+bool a51_found            = false;
+bool iic_found            = false;
+bool iic_compressed_found = false;
+bool bix_found            = false;
+bool maxmemory_found      = false;
+bool configbyte_found     = false;
+bool firstbyte_found      = false;
+bool appendreset_found    = false;
+
+  auto arg = args.find("--iic");
+  if(arg != args.end())
+  {
+      if (arg->second.isBool())
+      {
+         iic_found = arg->second.asBool();
+         OutFileType = FT_IIC;
+         IIC_Reset = true;
+      }
+  }
+
+  arg = args.find("--iicc");
+  if(arg != args.end())
+  {
+      if (arg->second.isBool())
+      {
+         iic_compressed_found = arg->second.asBool();
+         compressIIC = 1;
+         OutFileType = FT_IIC;
+         IIC_Reset = true;
+      }
+  }
+
+  arg = args.find("--bix");
+  if(arg != args.end())
+  {
+      if (arg->second.isBool())
+      {
+         bix_found = arg->second.asBool();
+      }
+  }
+
+  arg = args.find("--a51");
+  if(arg != args.end())
+  {
+      if (arg->second.isBool())
+      {
+         OutFileType = FT_ASM;
+         a51_found = arg->second.asBool();
+      }
+  }
+
+  if (!get_inputfile(args, InFilename))
+  {
+     std::cout << "sourcefile: invalid file defined" << std::endl;
+     failed_init = true;
+  }
+  else if (!get_outputfile(args, OutFilename))
+  {
+     std::cout << "outputfile: invalid file defined" << std::endl;
+     failed_init = true;
+  }
+
+  if (failed_init)
+  {
+     return 1;
+  }
+
+  
+
 
     Image = (BYTE *)malloc(MEMORY_BUFFER_SIZE);
     ImageMap = (BYTE *)malloc(MEMORY_BUFFER_SIZE+2);        // add two extra bytes to the image to help with iic compression.
     memset(Image,MEM_FILL,MEMORY_BUFFER_SIZE);
     memset(ImageMap,0,MEMORY_BUFFER_SIZE);
 
-    if (InFilename)
+    if (true) //(InFilename.)
         if (InFileType == FT_HEX)
         {
-            file = fopen(InFilename,"r");
+            file = fopen(InFilename.c_str(),"r");
 
             if(!file)
             {
@@ -455,11 +559,14 @@ int main(int argc, char *argv[])
                 memcpy(tmp,&line[(i*2)+9],2);
                 tmp[2] = 0;
                 rec_chksum = (BYTE)strtol(tmp,NULL,16);
+#if 0
                 if(rec_chksum != chksum)
                 {
                     //Error(ERR_BAD_CHKSUM);
-                    assert(0);
+                    std::cout << "Error: Bad Checksum, Expected: " << std::dec << (uint8_t)rec_chksum << " Actual: " << chksum << std::endl;
+                    return 1;
                 }
+#endif
 
             }
 
@@ -469,7 +576,7 @@ int main(int argc, char *argv[])
         {
             int numread;
 
-            file = fopen(InFilename,"r");
+            file = fopen(InFilename.c_str(),"r");
 
             if(!file)
             {
@@ -481,7 +588,7 @@ int main(int argc, char *argv[])
             memset(ImageMap,true,numread);
         }
 
-    file = fopen(OutFilename,"wb");
+    file = fopen(OutFilename.c_str(),"wb");
 
     switch(OutFileType)
     {
@@ -573,13 +680,13 @@ int main(int argc, char *argv[])
             }
             break;
         case FT_ASM:
-            time(time_now);
-            snprintf(time_str,TIME_STR_LEN,"%8s",asctime(localtime(time_now)));
-            snprintf(date_str+19,DATE_STR_LEN,"%s",asctime(localtime(time_now)));
+            time(&time_now);
+            snprintf(time_str,TIME_STR_LEN,"%8s",asctime(localtime(&time_now)));
+            snprintf(date_str+19,DATE_STR_LEN,"%s",asctime(localtime(&time_now)));
 
             fprintf(file,";;--------------------------------------------------------------------------------------\r\n");
-            fprintf(file,";; File:\t%s\r\n",OutFilename);
-            fprintf(file,";; Source:\t%s\r\n",InFilename);
+            fprintf(file,";; File:\t%s\r\n",OutFilename.c_str());
+            fprintf(file,";; Source:\t%s\r\n",InFilename.c_str());
             fprintf(file,";; Date:\t%s at %s\r\n",date_str,time_str);
             fprintf(file,";;--------------------------------------------------------------------------------------\r\n");
             fprintf(file,"%s_seg\tsegment\tcode\r\n", SymbolName);
