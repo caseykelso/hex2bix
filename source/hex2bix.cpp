@@ -6,6 +6,8 @@
 #include <time.h>
 #include <ctype.h>
 #include <assert.h>
+#include <docopt/docopt.h>
+ 
 #pragma pack (1)
 
 #define ERR_INVALID_CL      "Invalid command line."
@@ -151,34 +153,7 @@ EELOADER_MSB, 0x00,             // Location of ALL of the code.
 0xE6, 0x78, 0xE0, 0x20, 0xE6, 0xF9, 0x22, 0x80, 0x01, 0xE6, 
 0x00, 0x00 
 };
-void DisplayHeader(void)
-{
-    fprintf(stdout,"Intel Hex file to EZ-USB Binary file conversion utility\n");
-    fprintf(stdout,"Copyright (c) 2012-2013, Cypress Semiconductor Inc.\n");
-}
 
-void DisplayHelp(void)
-{
-    fprintf(stdout,"\nHEX2BIX [-AEIBRH?] [-IC] [-S symbol] [-M memsize] [-C Config0Byte] [-F firstByte] [-O filename] [-X] Source\n\n");
-    fprintf(stdout,"   Source - Input filename\n");
-    fprintf(stdout,"   A      - Output file in the A51 file format\n");
-    fprintf(stdout,"   B      - Output file in the BIX (raw binary) format (Default)\n");
-    fprintf(stdout,"   BI     - Input file in the BIX (raw binary) format (hex is default)\n");
-    fprintf(stdout,"   C      - Config0 BYTE for AN2200 and FX2 (Default = 0x04)\n");
-    fprintf(stdout,"   E      - Create .IIC file for External RAM. Prepends 0x200 byte loader that\n");
-    fprintf(stdout,"            loads at 0x%x00\n", EELOADER_MSB);
-    fprintf(stdout,"   F      - First byte (0xB0, 0xB2, 0xB6, 0xC0, 0xC2) (Default = 0xB2)\n");
-    fprintf(stdout,"   H|?    - Display this help screen\n");
-    fprintf(stdout,"   I      - Output file in the IIC file format (sets -R)\n");
-    fprintf(stdout,"   IC     - Output Compressed IIC file (sets -R)\n");
-    fprintf(stdout,"   M      - Max Memory(RAM) limit for firmware. (Default=8k)\n");
-    fprintf(stdout,"   O      - Output filename\n");
-    fprintf(stdout,"   P      - Product ID (Default = 2131)\n");
-    fprintf(stdout,"   R      - Append bootload block to release reset\n");
-    fprintf(stdout,"   S      - Public symbol name for linking\n");
-    fprintf(stdout,"   V      - Vendor ID (Default = 0x0547) \n");
-    exit(0);
-}
 
 void Error(char *err)
 {
@@ -187,6 +162,34 @@ void Error(char *err)
     exit(2);
 }
 
+bool get_file(std::map<std::string, docopt::value> args, std::string &file)
+{
+  bool result = false; 
+  auto p = args.find("--file")->second;
+
+  if (p.isString())
+  {
+     file = p.asString();
+     result = true;
+  }
+  
+  return result;
+}
+
+bool get_memory(std::map<std::string, docopt::value> args, std::string &memory)
+{
+  bool result = false;
+  auto m = args.find("--memory")->second;
+
+  if (m.isString())
+  {
+     memory   = m.asString();
+     result = true;
+  }
+
+  return result;
+}
+#if 0
 void ParseCommandLine(int argc, char *argv[])
 {
     bool    cont;
@@ -294,6 +297,7 @@ void ParseCommandLine(int argc, char *argv[])
 //     strcat(OutFilename,Extension[OutFileType]);
     }
 }
+#endif
 
 bool GetNextBlock(DWORD *addr)
 {
@@ -322,6 +326,35 @@ DWORD GetBlockLen(DWORD addr)
     return(addr - start);
 }
 
+#if 0
+void DisplayHeader(void)
+{
+
+
+void DisplayHelp(void)
+{
+    fprintf(stdout,"\nHEX2BIX [-AEIBRH?] [-IC] [-S symbol] [-M memsize] [-C Config0Byte] [-F firstByte] [-O filename] [-X] Source\n\n");
+    fprintf(stdout,"   Source - Input filename\n");
+    fprintf(stdout,"   A      - Output file in the A51 file format\n");
+    fprintf(stdout,"   B      - Output file in the BIX (raw binary) format (Default)\n");
+    fprintf(stdout,"   BI     - Input file in the BIX (raw binary) format (hex is default)\n");
+    fprintf(stdout,"   C      - Config0 BYTE for AN2200 and FX2 (Default = 0x04)\n");
+    fprintf(stdout,"   E      - Create .IIC file for External RAM. Prepends 0x200 byte loader that\n");
+    fprintf(stdout,"            loads at 0x%x00\n", EELOADER_MSB);
+    fprintf(stdout,"   F      - First byte (0xB0, 0xB2, 0xB6, 0xC0, 0xC2) (Default = 0xB2)\n");
+    fprintf(stdout,"   H|?    - Display this help screen\n");
+    fprintf(stdout,"   I      - Output file in the IIC file format (sets -R)\n");
+    fprintf(stdout,"   IC     - Output Compressed IIC file (sets -R)\n");
+    fprintf(stdout,"   M      - Max Memory(RAM) limit for firmware. (Default=8k)\n");
+    fprintf(stdout,"   O      - Output filename\n");
+    fprintf(stdout,"   P      - Product ID (Default = 2131)\n");
+    fprintf(stdout,"   R      - Append bootload block to release reset\n");
+    fprintf(stdout,"   S      - Public symbol name for linking\n");
+    fprintf(stdout,"   V      - Vendor ID (Default = 0x0547) \n");
+    exit(0);
+}
+#endif
+
 int main(int argc, char *argv[])
 {
     BYTE        rec_length, rec_type, rec_chksum, chksum;
@@ -333,8 +366,38 @@ int main(int argc, char *argv[])
     time_t      *time_now;
     DWORD totalCodeBytes = 0;
 
+	static const char USAGE[] =
+	R"(hex2bix.
+           Intel Hex file to EZ-USB Binary file conversion utility
+           Copyright (c) 2012-2013, Cypress Semiconductor Inc.
+
+	    Usage:
+	      hex2bix --port=<port> --a51  --source=<hexfilename> [--baud=<baudrate>]
+	      hex2bix --port=<port> --bix --source=<hexfilename> [--baud=<baudrate>]
+              hex2bix --a51
+	      hex2bix (-h | --help)
+	      hex2bix --version
+	    Options:
+	      -h --help                    Show this screen.
+	      --version                    Show version.
+	      --port=<comport>             Path to comport.
+	      --baud=<baudrate>            Baudrate [default: 115200].
+	      --iic                        Output file in IIC file for External RAM.
+              --iicc                       Output file in compressed IC file format. Sets --appendreset.
+	      --a51                        Output file in A51 file format.
+              --bix                        Output file in BIX (raw binary) format.
+              --appendreset                Append bootload block to release reset.
+	      --source=<hexfilename>       Hex Filename
+              --output=<ouputfilename>     Output Filename
+              --maxmemory=<maxmemory>      Set maximum memory (RAM) limit for firmware.
+              --configbyte=<configbyte>    Set config0 byte for AN2200 and FX2. Default ix 0x04.
+              --firstbyte=<firstbyte>      Set first byte (0xB0, 0xB2, 0xB6, 0xC0, 0xC2). Default is 0xB2.
+	)";
+
+#if 0
     DisplayHeader();
     ParseCommandLine(argc,argv);
+#endif
 
     Image = (BYTE *)malloc(MEMORY_BUFFER_SIZE);
     ImageMap = (BYTE *)malloc(MEMORY_BUFFER_SIZE+2);        // add two extra bytes to the image to help with iic compression.
